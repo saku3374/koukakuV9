@@ -1,0 +1,907 @@
+import { useState, useEffect, useCallback } from “react”;
+
+const STORAGE_KEY = “kokaku_v9”;
+
+const KIREI_ZONES  = [50,100,150,200,250,300,350,400,450,550];
+const ZONE_COLORS  = [“🟩”,“🟨”,“🟥”,“🟦”,“🟪”,“🌈”,“🥇”];
+const SEN_COLORS   = [“🟩”,“🟥”,“🟦”,“🟪”,“🌈”,“🥇”];
+const CZ_LEVELS    = [“🟦”,“🟩”,“🟥”,“🌈”];
+const RARE_ROLES   = [“なし”,“🔴チェリー”,“🟢スイカ”,“🎰強役”];
+const TACHI_LIST   = [
+{key:“⚪️”,hint:“平均35pt”},
+{key:“🔵”,hint:“平均50pt”},
+{key:“🟢”,hint:“50pt以上・平均85pt”},
+{key:“🔴”,hint:“100pt以上・平均130pt”},
+];
+const MODES = [“A”,“B”,“C”,“D”];
+const MODE_INFO = {
+A:{color:”#6c757d”,desc:“天井550G”,ceiling:550},
+B:{color:”#0d6efd”,desc:“天井450G”,ceiling:450},
+C:{color:”#fd7e14”,desc:“天井250G★”,ceiling:250},
+D:{color:”#dc3545”,desc:“天井150G★★”,ceiling:150},
+};
+const ZONE_TABLE = {
+50: {A:“25%”,B:“50%”,C:“25%”,D:“100%”},
+100:{A:“50%”,B:“1%”, C:“50%”,D:“1%”},
+150:{A:“1%”, B:“50%”,C:“1%”, D:“天井”},
+200:{A:“家出”,B:“家出”,C:“家出”,D:”-”},
+250:{A:“50%”,B:“25%”,C:“天井”,D:”-”},
+300:{A:”-”,  B:“1%”, C:”-”,  D:”-”},
+350:{A:“25%”,B:“50%”,C:”-”,  D:”-”},
+400:{A:“家出”,B:“家出”,C:”-”, D:”-”},
+450:{A:“50%”,B:“天井”,C:”-”,  D:”-”},
+550:{A:“天井”,B:”-”,  C:”-”,  D:”-”},
+};
+const ICHI_LIST = [
+{key:“素子”,       hint:“デフォルト”,          color:”#555”},
+{key:“戦闘中素子”, hint:“高設定示唆(弱)”,       color:”#198754”},
+{key:“トグサ”,     hint:“奇数設定示唆”,         color:”#4da8ff”},
+{key:“バトー”,     hint:“偶数設定示唆”,         color:”#4da8ff”},
+{key:“ポーカー”,   hint:“高モード示唆”,         color:”#0dcaf0”},
+{key:“素子後ろ姿”, hint:“モードB以上濃厚”,      color:”#ffc107”},
+{key:“公安9課”,    hint:“モードC以上濃厚”,      color:”#fd7e14”},
+{key:“電脳素子”,   hint:“モードC以上+D期待”,    color:”#a855f7”},
+{key:“アオイ”,     hint:“モードD+設定4以上”,    color:”#fbbf24”},
+{key:“2ndGIG”,     hint:“白の境界 権利保有”,    color:”#22d3ee”},
+];
+const FRAME_LIST = [
+{key:“なし”,   color:”#444”},
+{key:“🔴赤枠”, color:”#dc3545”},
+{key:“🟣紫枠”, color:”#a855f7”},
+{key:“🥇金枠”, color:”#ffc107”},
+];
+const TROPHY_LIST = [
+{key:“なし”,  label:“なし”,               color:”#444”},
+{key:“銅”,    label:“🥉銅(設定2以上)”,    color:”#cd7f32”},
+{key:“銀”,    label:“🥈銀(設定3以上)”,    color:”#adb5bd”},
+{key:“金”,    label:“🥇金(設定4以上)”,    color:”#ffc107”},
+{key:“キリン”,label:“🦒キリン(設定5以上)”, color:”#fd7e14”},
+{key:“虹”,    label:“🌈虹(設定6確定)”,    color:”#0dcaf0”},
+];
+const SAM_SCREENS = [
+{key:“①”,hint:“デフォルト”},{key:“②”,hint:“復活期待50%”},{key:“③”,hint:“調査中”},
+{key:“④”,hint:“偶数↑”},{key:“⑤”,hint:“高設定弱”},{key:“⑥”,hint:“高設定強”},
+{key:“⑦”,hint:“調査中”},{key:“⑧”,hint:“設定2以上”},{key:“⑨”,hint:“設定4以上”},{key:“⑩”,hint:“設定6濃厚”},
+];
+const TABLE_LABEL  = [“①”,“②”,“③”,“④”,“⑤”,“⑥”,“⑦”];
+const CYCLE_LABEL  = [“①”,“②”,“③”,“④”,“⑤”,“⑥”,“⑦”,“⑧”];
+
+// ==================== データ ====================
+let _id = 0;
+const uid = () => `${++_id}_${Date.now()}`;
+
+function newAT(num) {
+return {
+num, cycles:[newCycle()],
+atMai:null, bonusMai:null,
+ichiKey:null, frameKey:“なし”,
+samScreen:null, trophyKey:“なし”,
+tachikomaColor:null, // AT終了後に見た看板色（次ATへの示唆）
+hakkyoLevel:null, note:””,
+};
+}
+function newCycle() {
+return {
+id:uid(), naibu:“通常”, confirmed:[], denied:[],
+tachikomaColor:null, // この周期中に見た看板色
+kirei:Object.fromEntries(KIREI_ZONES.map(g=>[g,{color:null,hatten:null}])),
+senList:[], cz:null,
+};
+}
+function newSen(g, trigger) {
+return {id:uid(), g, trigger, tableNum:null, color:null, ok:null, memo:””};
+}
+function newCZ(g, type) {
+return {id:uid(), g, type:type||“SAM”, level:null, rare:“なし”, ok:null, fukkatsu:null, samScreen:null};
+}
+
+// ==================== スタイル ====================
+const BG=”#07070f”, BG2=”#0e0e1a”, BG3=”#16162a”, BDR=”#222235”;
+const GRN=”#00ff99”, MUT=”#556”, FONT=”‘Courier New’,monospace”;
+
+const card = {background:BG2,border:`1px solid ${BDR}`,borderRadius:10,padding:“10px 12px”,marginBottom:8};
+const sec  = {fontSize:9,color:GRN,letterSpacing:3,textTransform:“uppercase”,marginBottom:6,fontWeight:700};
+const row  = {display:“flex”,gap:4,flexWrap:“wrap”,marginBottom:4};
+
+const bigBtn = (bg=GRN,fg=BG)=>({background:bg,color:fg,border:“none”,borderRadius:9,padding:“12px”,fontSize:14,fontWeight:700,cursor:“pointer”,fontFamily:FONT,width:“100%”,marginBottom:6});
+const outBtn = (color=”#aaa”,border=”#333”)=>({…bigBtn(“transparent”,color),border:`1px solid ${border}`});
+
+function Btn({active,color=GRN,children,onClick,sm}) {
+return <button onClick={onClick} style={{
+background:active?color+“33”:“transparent”, color:active?color:color+“88”,
+border:`1px solid ${active?color:color+"33"}`,
+borderRadius:5, padding:sm?“3px 8px”:“5px 11px”,
+fontSize:sm?11:12, cursor:“pointer”, fontFamily:FONT, fontWeight:active?700:400,
+}}>{children}</button>;
+}
+function Tag({color=GRN,children,sm}) {
+return <span style={{display:“inline-block”,background:color+“22”,border:`1px solid ${color}44`,color,borderRadius:3,padding:sm?“1px 4px”:“2px 6px”,fontSize:sm?10:11,margin:“1px”}}>{children}</span>;
+}
+function ModeBtn({mode,state,onClick}) {
+const info=MODE_INFO[mode];
+return <button onClick={onClick} style={{
+background:state===“on”?”#ffffff11”:“transparent”,
+color:state===“on”?info.color:state===“deny”?”#2a2a2a”:info.color+“77”,
+border:`1px solid ${state==="deny"?"#1a1a1a":info.color+(state==="on"?"":"44")}`,
+borderRadius:6,padding:“5px 9px”,fontSize:11,cursor:“pointer”,
+fontFamily:FONT,textDecoration:state===“deny”?“line-through”:“none”,
+}}>
+<b>モード{mode}</b>
+<span style={{display:“block”,fontSize:9,opacity:0.7}}>{info.desc}</span>
+</button>;
+}
+function ZoneHint({g,confirmed,denied}) {
+if (!g) return null;
+const gn=parseInt(g); if(isNaN(gn)) return null;
+const zone=Math.floor(gn/50)*50;
+const row2=ZONE_TABLE[zone]; if(!row2) return null;
+const active=MODES.filter(m=>!denied.includes(m));
+const show=confirmed.length>0?confirmed.filter(m=>active.includes(m)):active;
+if (!show.length) return null;
+const rates=show.map(m=>({m,v:row2[m]||”-”}));
+const ceil=rates.some(r=>r.v===“天井”), iede=rates.some(r=>r.v===“家出”);
+return <div style={{background:ceil?”#dc354518”:iede?”#0dcaf018”:”#ffffff08”,border:`1px solid ${ceil?"#dc354566":iede?"#0dcaf066":"#333"}`,borderRadius:7,padding:“5px 9px”,marginTop:3,fontSize:11}}>
+<span style={{color:MUT}}>{zone}G: </span>
+{rates.map(r=><span key={r.m} style={{marginRight:6}}>
+<span style={{color:MODE_INFO[r.m].color}}>モード{r.m} </span>
+<b style={{color:r.v===“天井”?”#ff6b6b”:r.v===“家出”?”#0dcaf0”:”#aaa”}}>{r.v===“家出”?“🤖家出”:r.v}</b>
+</span>)}
+{ceil && <b style={{color:”#ff6b6b”}}> ⚡CZ濃厚</b>}
+
+  </div>;
+}
+
+// ==================== テンキー ====================
+function NumPad({value, onChange, onClose, label}) {
+const [v, setV] = useState(String(value||””));
+function press(k) {
+if (k===“⌫”) { setV(p=>p.slice(0,-1)); return; }
+if (k===“C”)  { setV(””); return; }
+if (v.length>=4) return;
+setV(p=>p+k);
+}
+function confirm() { onChange(v); onClose(); }
+const keys = [“7”,“8”,“9”,“4”,“5”,“6”,“1”,“2”,“3”,“C”,“0”,“⌫”];
+return (
+<div style={{position:“fixed”,bottom:0,left:0,right:0,background:”#0a0a18”,borderTop:`2px solid ${GRN}44`,zIndex:200,padding:“10px 12px 24px”}}>
+<div style={{display:“flex”,alignItems:“center”,justifyContent:“space-between”,marginBottom:8}}>
+<span style={{color:MUT,fontSize:11}}>{label}</span>
+<span style={{color:GRN,fontSize:22,fontWeight:700,fontFamily:FONT,minWidth:60,textAlign:“right”}}>{v||”—”}</span>
+</div>
+<div style={{display:“grid”,gridTemplateColumns:“repeat(3,1fr)”,gap:6,marginBottom:8}}>
+{keys.map(k=>(
+<button key={k} onClick={()=>press(k)} style={{
+background:k===“⌫”||k===“C”?”#1a1a2a”:”#111122”,
+color:k===“⌫”?”#ff6666”:k===“C”?”#ff9944”:GRN,
+border:`1px solid ${k==="⌫"||k==="C"?"#333":"#1e1e3a"}`,
+borderRadius:8,padding:“14px 0”,fontSize:18,fontWeight:700,
+cursor:“pointer”,fontFamily:FONT,
+}}>{k}</button>
+))}
+</div>
+<div style={{display:“grid”,gridTemplateColumns:“1fr 1fr”,gap:8}}>
+<button onClick={onClose} style={{background:“transparent”,color:”#556”,border:“1px solid #333”,borderRadius:8,padding:“12px”,fontSize:14,cursor:“pointer”,fontFamily:FONT}}>キャンセル</button>
+<button onClick={confirm} style={{background:GRN,color:BG,border:“none”,borderRadius:8,padding:“12px”,fontSize:14,fontWeight:700,cursor:“pointer”,fontFamily:FONT}}>確定</button>
+</div>
+</div>
+);
+}
+
+// G数表示ボタン（タップでテンキー表示）
+function GInput({value, onChange, placeholder, label}) {
+const [open, setOpen] = useState(false);
+return <>
+<button onClick={()=>setOpen(true)} style={{
+background:BG3, border:`1px solid ${value?"#444":BDR}`,
+borderRadius:7, color:value?GRN:”#445”, padding:“8px 12px”,
+fontSize:value?16:13, fontFamily:FONT, cursor:“pointer”,
+fontWeight:value?700:400, textAlign:“left”, flex:1,
+}}>
+{value ? `${value}G` : placeholder||“G数入力”}
+</button>
+{open && <NumPad value={value} label={label||“G数”} onChange={v=>onChange(v?parseInt(v):null)} onClose={()=>setOpen(false)}/>}
+</>;
+}
+
+// ==================== メイン ====================
+export default function App() {
+const [screen,   setScreen]   = useState(“home”);
+const [ats,      setATs]      = useState([]);
+const [curAT,    setCurAT]    = useState(null);
+const [curCyc,   setCurCyc]   = useState(0);
+const [totalG,   setTotalG]   = useState(””);
+const [totalMai, setTotalMai] = useState(””);
+const [senG,     setSenG]     = useState(null);
+const [senTrig,  setSenTrig]  = useState(“規定G”);
+const [czG,      setCzG]      = useState(null);
+const [openSec,  setOpenSec]  = useState(null);
+const [openSenIdx, setOpenSenIdx] = useState(null); // 展開中の殲滅ゾーンindex
+const [ready,    setReady]    = useState(false);
+const [saveSt,   setSaveSt]   = useState(””);
+
+const at  = curAT!==null ? ats[curAT]  : null;
+const cyc = at ? at.cycles[curCyc] : null;
+
+useEffect(()=>{
+(async()=>{
+try {
+const r=await window.storage.get(STORAGE_KEY);
+if (r?.value) {
+const d=JSON.parse(r.value);
+if (Array.isArray(d.ats)) setATs(d.ats);
+if (d.totalG)   setTotalG(d.totalG);
+if (d.totalMai) setTotalMai(d.totalMai);
+}
+} catch(e) {}
+setReady(true);
+})();
+},[]);
+
+useEffect(()=>{
+if (!ready) return;
+(async()=>{
+try {
+await window.storage.set(STORAGE_KEY,JSON.stringify({ats,totalG,totalMai}));
+setSaveSt(“💾”); setTimeout(()=>setSaveSt(””),1200);
+} catch(e){ setSaveSt(“⚠️”); }
+})();
+},[ats,totalG,totalMai,ready]);
+
+const updAT  = useCallback(fn=>{ setATs(p=>{const n=[…p];n[curAT]=fn(n[curAT]);return n;}); },[curAT]);
+const updCyc = useCallback(fn=>{ setATs(p=>{const n=[…p];const a={…n[curAT]};const cs=[…a.cycles];cs[curCyc]=fn(cs[curCyc]);a.cycles=cs;n[curAT]=a;return n;}); },[curAT,curCyc]);
+
+function startNew() {
+const idx=ats.length;
+setATs(p=>[…p,newAT(p.length+1)]);
+setCurAT(idx); setCurCyc(0);
+setSenG(null); setCzG(null); setOpenSec(null); setOpenSenIdx(null);
+setScreen(“record”);
+}
+function addCycle() {
+updAT(a=>({…a,cycles:[…a.cycles,newCycle()]}));
+setCurCyc(c=>c+1);
+setSenG(null); setCzG(null); setOpenSec(null); setOpenSenIdx(null);
+}
+
+function modeState(m) {
+if (!cyc) return “off”;
+return cyc.confirmed.includes(m)?“on”:cyc.denied.includes(m)?“deny”:“off”;
+}
+function cycleMode(m) {
+updCyc(c=>{
+if (!c.confirmed.includes(m)&&!c.denied.includes(m)) return {…c,confirmed:[…c.confirmed,m]};
+if (c.confirmed.includes(m)) return {…c,confirmed:c.confirmed.filter(x=>x!==m),denied:[…c.denied,m]};
+return {…c,denied:c.denied.filter(x=>x!==m)};
+});
+}
+function updKirei(g,key,val) {
+updCyc(c=>{const k={…c.kirei};k[g]={…k[g],[key]:val};return {…c,kirei:k};});
+}
+function addSen() {
+if (!senG) return;
+updCyc(c=>({…c,senList:[…c.senList,newSen(senG,senTrig)]}));
+// 新しく追加したindexを開く、G数はクリア
+updCyc(c=>{ setOpenSenIdx(c.senList.length); return c; });
+setSenG(null);
+setOpenSec(null); // 入力フォームを閉じる
+}
+function updSen(si,key,val) {
+updCyc(c=>{const s=[…c.senList];s[si]={…s[si],[key]:val};return {…c,senList:s};});
+}
+function delSen(si) {
+updCyc(c=>({…c,senList:c.senList.filter((_,i)=>i!==si)}));
+if (openSenIdx===si) setOpenSenIdx(null);
+}
+function addCZ(type) {
+if (!czG) return;
+updCyc(c=>({…c,cz:newCZ(czG,type)}));
+setCzG(null);
+}
+function updCZ(key,val) {
+updCyc(c=>({…c,cz:{…c.cz,[key]:val}}));
+}
+
+// ==================== レポート ====================
+function buildReport() {
+const lines=[“☆スマスロ攻殻機動隊 実戦まとめ”,`総G数:${totalG}G / 差枚:${totalMai}枚`,””];
+ats.forEach(a=>{
+// 前ATからの看板引き継ぎ
+const prevAt = ats[a.num-2];
+const inheritTachi = prevAt?.tachikomaColor;
+lines.push(`AT${a.num}${inheritTachi?" ↩看板"+inheritTachi:""}`);
+a.cycles.forEach((c,ci)=>{
+const cn=CYCLE_LABEL[ci]||String(ci+1);
+const mStr=c.confirmed.length?” 確:”+c.confirmed.join(””):””;
+const dStr=c.denied.length?” 否:”+c.denied.join(””):””;
+const tachi=c.tachikomaColor?” 看板”+c.tachikomaColor:””;
+lines.push(`${cn}${c.naibu}${mStr}${dStr}${tachi}`);
+const kLine=KIREI_ZONES.filter(g=>c.kirei[g].color||c.kirei[g].hatten!==null)
+.map(g=>`${g}${c.kirei[g].color||""}${c.kirei[g].hatten===true?"〇":c.kirei[g].hatten===false?"-":""}`)
+.join(” “);
+if (kLine) lines.push(` [${kLine}]`);
+c.senList.forEach(s=>{
+const tn=s.tableNum?” “+s.tableNum:””;
+const ok=s.ok===true?“〇”:s.ok===false?“×”:”?”;
+lines.push(` (${s.g}G 殲滅${s.trigger==="ポイント"?"P":""}${tn}${s.color||""}${ok}${s.memo?" "+s.memo:""})`);
+});
+if (c.cz) {
+const cz=c.cz;
+const ok=cz.ok===true?“〇”:cz.ok===false?“×”:”?”;
+const rare=cz.rare&&cz.rare!==“なし”?” “+cz.rare:””;
+const fuk=cz.fukkatsu===true?” 復活〇”:cz.fukkatsu===false?” 復活×”:””;
+const sam=cz.samScreen?” 画面”+cz.samScreen:””;
+lines.push(` ${cz.g}G CZ[${cz.type}] ${cz.level||"?"}${rare}${ok}${fuk}${sam}`);
+}
+});
+const mai=a.atMai?`${a.atMai}枚`:””;
+const bonus=a.bonusMai?` (+${a.bonusMai})`:””;
+const ichi=a.ichiKey?` ${a.ichiKey}${a.frameKey!=="なし"?a.frameKey:""}` :””;
+const sam=a.samScreen?` 画面${a.samScreen}`:””;
+const troph=a.trophyKey!==“なし”?` ${a.trophyKey}`:””;
+const hak=a.hakkyoLevel?` 白の境界Lv${a.hakkyoLevel}`:””;
+const tachi=a.tachikomaColor?` ${a.tachikomaColor}`:””;
+lines.push(` ↓${mai}${bonus}${ichi}${sam}${troph}${hak}${tachi}`);
+if (a.note) lines.push(` ${a.note}`);
+lines.push(””);
+});
+return lines.join(”\n”);
+}
+
+// ==================== ホーム ====================
+if (screen===“home”) return (
+<div style={{background:BG,minHeight:“100vh”,color:”#dde”,fontFamily:FONT,paddingBottom:80}}>
+<div style={{background:BG2,borderBottom:`1px solid ${GRN}22`,padding:“8px 12px”,display:“flex”,alignItems:“center”,justifyContent:“space-between”,position:“sticky”,top:0,zIndex:100}}>
+<span style={{color:GRN,fontSize:12,fontWeight:700,letterSpacing:3}}>⚡ 攻殻機動隊</span>
+<div style={{display:“flex”,alignItems:“center”,gap:8}}>
+<span style={{fontSize:11,color:”#444”}}>{saveSt}</span>
+<Tag sm>{ats.length}AT</Tag>
+</div>
+</div>
+<div style={{padding:“10px 12px”}}>
+<div style={card}>
+<div style={sec}>セッション</div>
+<div style={{display:“flex”,gap:8,marginBottom:10}}>
+{[
+{v:ats.length,l:“AT”,c:GRN},
+{v:ats.reduce((a,r)=>a+r.cycles.reduce((b,c)=>b+c.senList.length,0),0),l:“殲滅”,c:”#ffc107”},
+{v:ats.filter(r=>r.trophyKey!==“なし”).length,l:“トロフィー”,c:”#a855f7”},
+].map(({v,l,c})=>(
+<div key={l} style={{flex:1,textAlign:“center”}}>
+<div style={{fontSize:24,fontWeight:700,color:c}}>{v}</div>
+<div style={{fontSize:9,color:MUT,letterSpacing:1}}>{l}</div>
+</div>
+))}
+</div>
+{/* 総G数・差枚もテンキーで */}
+<div style={{display:“flex”,gap:6}}>
+{[{v:totalG,sv:setTotalG,p:“総G数”},{v:totalMai,sv:setTotalMai,p:“総差枚”}].map(({v,sv,p})=>(
+<div key={p} style={{flex:1}}>
+<div style={{fontSize:10,color:MUT,marginBottom:2}}>{p}</div>
+<GInput value={v?parseInt(v):null} onChange={val=>sv(val?String(val):””)} placeholder={p} label={p}/>
+</div>
+))}
+</div>
+</div>
+
+```
+    {ats.map((a,i)=>{
+      const prevAt=ats[i-1];
+      const inheritTachi=prevAt?.tachikomaColor;
+      return (
+        <div key={i} style={{...card,cursor:"pointer",borderColor:curAT===i?GRN+"44":BDR}}
+          onClick={()=>{setCurAT(i);setCurCyc(a.cycles.length-1);setScreen("record");}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+            <span style={{color:GRN,fontWeight:700,fontSize:14}}>AT{a.num}</span>
+            {inheritTachi&&<Tag color="#0dcaf0" sm>↩{inheritTachi}</Tag>}
+            {a.atMai&&<span style={{color:"#0dcaf0",fontWeight:700,marginLeft:"auto"}}>{a.atMai}枚{a.bonusMai?` (+${a.bonusMai})`:""}</span>}
+            {a.trophyKey!=="なし"&&<Tag color={TROPHY_LIST.find(t=>t.key===a.trophyKey)?.color||"#888"} sm>{a.trophyKey}</Tag>}
+          </div>
+          <div style={{fontSize:10,color:"#556",lineHeight:1.9}}>
+            {a.cycles.map((c,ci)=>(
+              <div key={ci} style={{paddingLeft:4,borderLeft:`2px solid ${c.cz?.ok===true?"#00ff9944":c.cz?.ok===false?"#ff444433":"#333"}`}}>
+                <span style={{color:"#667"}}>{CYCLE_LABEL[ci]}</span>
+                <span style={{color:c.naibu==="超高確"?"#fd7e14":c.naibu==="高確"?"#0dcaf0":"#445",marginLeft:3,fontSize:9}}>{c.naibu}</span>
+                {c.tachikomaColor&&<span style={{marginLeft:3,fontSize:11}}>{c.tachikomaColor}</span>}
+                {c.confirmed.map(m=><span key={m} style={{color:MODE_INFO[m].color,marginLeft:3,fontSize:9}}>確{m}</span>)}
+                {c.senList.map((s,si)=><span key={si} style={{marginLeft:4}}>
+                  <span style={{color:"#667"}}>{s.g}G</span>
+                  {s.color&&<span>{s.color}</span>}
+                  {s.ok===true&&<span style={{color:"#00ff99"}}>〇</span>}
+                  {s.ok===false&&<span style={{color:"#ff4444"}}>×</span>}
+                </span>)}
+                {c.cz&&<span style={{marginLeft:4}}>
+                  <span style={{color:"#fbbf24"}}>CZ</span>
+                  {c.cz.level&&<span>{c.cz.level}</span>}
+                  {c.cz.ok===true&&<span style={{color:"#00ff99"}}>〇</span>}
+                  {c.cz.ok===false&&<span style={{color:"#ff4444"}}>×</span>}
+                </span>}
+              </div>
+            ))}
+          </div>
+          {a.ichiKey&&<div style={{marginTop:4}}><Tag color={ICHI_LIST.find(e=>e.key===a.ichiKey)?.color||"#888"} sm>{a.ichiKey}</Tag></div>}
+        </div>
+      );
+    })}
+
+    <button style={bigBtn(GRN)} onClick={startNew}>＋ 新しいATを開始</button>
+    <button style={outBtn()} onClick={()=>setScreen("summary")}>📈 設定判別サマリー</button>
+    <button style={outBtn("#dc3545","#dc354533")} onClick={()=>{if(window.confirm("リセットしますか？")){setATs([]);setTotalG("");setTotalMai("");try{window.storage.delete(STORAGE_KEY);}catch(e){}}}}>🗑️ リセット</button>
+
+    <div style={{...card,marginTop:8}}>
+      <div style={sec}>一枚絵カンペ</div>
+      {ICHI_LIST.filter(e=>e.color!=="#555").map(e=>(
+        <div key={e.key} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+          <Tag color={e.color} sm>{e.key}</Tag>
+          <span style={{fontSize:11,color:"#aaa"}}>→ {e.hint}</span>
+        </div>
+      ))}
+      <div style={{marginTop:6,borderTop:`1px solid ${BDR}`,paddingTop:6}}>
+        <div style={{fontSize:9,color:GRN,letterSpacing:2,marginBottom:4}}>タチコマ看板（CZ前兆/CZ終了/AT終了時）</div>
+        {TACHI_LIST.map(t=>(
+          <div key={t.key} style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+            <span style={{fontSize:16}}>{t.key}</span>
+            <span style={{fontSize:11,color:"#aaa"}}>→ {t.hint}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+);
+
+// ==================== 記録画面 ====================
+if (screen===“record” && at && cyc) {
+const hasCZ=!!cyc.cz;
+const prevAt=ats[curAT-1];
+const inheritTachi=prevAt?.tachikomaColor;
+
+```
+// セクション開閉コンポーネント
+const Section = ({id,label,color=GRN,children,badge})=>(
+  <div style={{marginBottom:6}}>
+    <button onClick={()=>setOpenSec(p=>p===id?null:id)} style={{
+      background:openSec===id?color+"18":"transparent",
+      color:openSec===id?color:color+"66",
+      border:`1px solid ${openSec===id?color+"44":"#222"}`,
+      borderRadius:7, padding:"7px 12px", fontSize:12, fontWeight:700,
+      cursor:"pointer", fontFamily:FONT, width:"100%", textAlign:"left",
+      display:"flex", alignItems:"center", justifyContent:"space-between",
+    }}>
+      <span>{openSec===id?"▼ ":"▶ "}{label}</span>
+      {badge&&<span style={{fontSize:10,opacity:0.7}}>{badge}</span>}
+    </button>
+    {openSec===id&&(
+      <div style={{background:BG3,border:`1px solid #222`,borderTop:"none",borderRadius:"0 0 7px 7px",padding:"10px 10px 8px"}}>
+        {children}
+      </div>
+    )}
+  </div>
+);
+
+return (
+  <div style={{background:BG,minHeight:"100vh",color:"#dde",fontFamily:FONT,paddingBottom:100}}>
+    <div style={{background:BG2,borderBottom:`1px solid ${GRN}22`,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+      <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:GRN,fontSize:18,cursor:"pointer",padding:"0 4px"}}>←</button>
+      <span style={{color:GRN,fontWeight:700,fontSize:13}}>AT{at.num} {CYCLE_LABEL[curCyc]||""}</span>
+      <span style={{fontSize:11,color:"#444"}}>{saveSt}</span>
+    </div>
+    <div style={{padding:"8px 10px"}}>
+
+      {/* 前ATからの看板引き継ぎ */}
+      {inheritTachi&&curCyc===0&&(
+        <div style={{...card,borderColor:"#0dcaf044",background:"#0a0a20",marginBottom:8}}>
+          <span style={{fontSize:10,color:"#0dcaf0",letterSpacing:2}}>↩ 前AT看板（次AT示唆）</span>
+          <span style={{fontSize:20,marginLeft:8}}>{inheritTachi}</span>
+          <span style={{fontSize:11,color:"#aaa",marginLeft:6}}>{TACHI_LIST.find(t=>t.key===inheritTachi)?.hint}</span>
+        </div>
+      )}
+
+      {/* 周期タブ */}
+      {at.cycles.length>1&&(
+        <div style={{display:"flex",gap:4,marginBottom:8,overflowX:"auto",paddingBottom:2}}>
+          {at.cycles.map((_,ci)=>(
+            <button key={ci} onClick={()=>{setCurCyc(ci);setOpenSec(null);setOpenSenIdx(null);}} style={{
+              background:curCyc===ci?GRN+"22":"transparent",
+              color:curCyc===ci?GRN:"#445",
+              border:`1px solid ${curCyc===ci?GRN+"55":"#333"}`,
+              borderRadius:5,padding:"4px 10px",fontSize:11,
+              cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap",flexShrink:0,
+            }}>
+              {CYCLE_LABEL[ci]||ci+1}
+              {at.cycles[ci].cz?.ok===true&&" ✅"}
+              {at.cycles[ci].cz?.ok===false&&" ❌"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ★ 内部状態 + タチコマ看板 */}
+      <div style={card}>
+        <div style={sec}>内部状態</div>
+        <div style={row}>
+          {["通常","高確","超高確"].map(s=>(
+            <Btn key={s} active={cyc.naibu===s}
+              color={s==="超高確"?"#fd7e14":s==="高確"?"#0dcaf0":GRN}
+              onClick={()=>updCyc(c=>({...c,naibu:s}))}>{s}</Btn>
+          ))}
+        </div>
+        {/* タチコマ看板（小） */}
+        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,paddingTop:6,borderTop:`1px solid ${BDR}`}}>
+          <span style={{fontSize:10,color:MUT,minWidth:70}}>タチコマ看板</span>
+          <div style={{display:"flex",gap:4}}>
+            {TACHI_LIST.map(t=>(
+              <button key={t.key} onClick={()=>updCyc(c=>({...c,tachikomaColor:c.tachikomaColor===t.key?null:t.key}))}
+                style={{
+                  background:cyc.tachikomaColor===t.key?"#ffffff22":"transparent",
+                  border:`1px solid ${cyc.tachikomaColor===t.key?"#888":"#333"}`,
+                  borderRadius:5,padding:"3px 8px",cursor:"pointer",fontSize:16,lineHeight:1,
+                }} title={t.hint}>{t.key}</button>
+            ))}
+          </div>
+          {cyc.tachikomaColor&&<span style={{fontSize:10,color:"#aaa"}}>{TACHI_LIST.find(t=>t.key===cyc.tachikomaColor)?.hint}</span>}
+        </div>
+      </div>
+
+      {/* モード */}
+      <div style={card}>
+        <div style={sec}>殲滅モード（タップ: 未→確定→否定→未）</div>
+        <div style={row}>
+          {MODES.map(m=><ModeBtn key={m} mode={m} state={modeState(m)} onClick={()=>cycleMode(m)}/>)}
+        </div>
+        {cyc.confirmed.length>0&&(
+          <div style={{fontSize:11,marginTop:3}}>
+            {cyc.confirmed.map(m=><span key={m} style={{marginRight:8,color:MODE_INFO[m].color}}>⚡モード{m}: 天井{MODE_INFO[m].ceiling}G</span>)}
+          </div>
+        )}
+        {cyc.denied.length>0&&(
+          <div style={{fontSize:10,color:MUT,marginTop:2}}>否定:{cyc.denied.join("/")} 残:{MODES.filter(m=>!cyc.denied.includes(m)).join("/")}</div>
+        )}
+      </div>
+
+      {/* ★ 規定ゾーン */}
+      <Section id="kirei" label="📍 規定ゾーン" color="#4da8ff" badge={`${KIREI_ZONES.filter(g=>cyc.kirei[g].color||cyc.kirei[g].hatten!==null).length}件記録中`}>
+        <div style={{fontSize:10,color:MUT,marginBottom:6}}>色=期待度/モード示唆　〇=殲滅発展あり　-=発展なし</div>
+        {KIREI_ZONES.map(g=>{
+          const k=cyc.kirei[g];
+          return (
+            <div key={g} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:`1px solid #1a1a2a`,opacity:k.color||k.hatten!==null?1:0.45}}>
+              <span style={{color:"#4da8ff",fontWeight:700,minWidth:34,fontSize:12}}>{g}G</span>
+              <div style={{display:"flex",gap:3,flex:1,flexWrap:"wrap"}}>
+                {ZONE_COLORS.map(c=>(
+                  <button key={c} onClick={()=>updKirei(g,"color",k.color===c?null:c)}
+                    style={{background:k.color===c?"#ffffff22":"transparent",border:`1px solid ${k.color===c?"#888":"#2a2a3a"}`,borderRadius:4,padding:"2px 4px",cursor:"pointer",fontSize:14,lineHeight:1}}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:3}}>
+                <button onClick={()=>updKirei(g,"hatten",k.hatten===true?null:true)}
+                  style={{background:k.hatten===true?"#00ff9922":"transparent",color:k.hatten===true?GRN:"#445",border:`1px solid ${k.hatten===true?GRN+"44":"#333"}`,borderRadius:4,padding:"2px 8px",cursor:"pointer",fontSize:12,fontFamily:FONT}}>〇</button>
+                <button onClick={()=>updKirei(g,"hatten",k.hatten===false?null:false)}
+                  style={{background:k.hatten===false?"#ff444422":"transparent",color:k.hatten===false?"#ff4444":"#445",border:`1px solid ${k.hatten===false?"#ff444444":"#333"}`,borderRadius:4,padding:"2px 8px",cursor:"pointer",fontSize:12,fontFamily:FONT}}>-</button>
+              </div>
+            </div>
+          );
+        })}
+      </Section>
+
+      {/* ★ 殲滅ゾーン */}
+      <div style={{marginBottom:6}}>
+        {/* 追加フォーム */}
+        <Section id="sen_add" label="⚔️ 殲滅ゾーン追加" color={GRN}>
+          <div style={{...row,marginBottom:6}}>
+            <span style={{fontSize:11,color:MUT,alignSelf:"center"}}>契機:</span>
+            {["規定G","ポイント"].map(t=>(
+              <Btn key={t} active={senTrig===t} color={t==="ポイント"?"#fd7e14":GRN} sm
+                onClick={()=>setSenTrig(t)}>{t==="規定G"?"📍規定G":"⭐ポイント"}</Btn>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:6,marginBottom:4}}>
+            <GInput value={senG} onChange={setSenG} placeholder="発生G数" label="殲滅ゾーン G数"/>
+            <button onClick={addSen} style={{background:GRN,color:BG,border:"none",borderRadius:7,padding:"8px 14px",fontSize:16,fontWeight:700,cursor:"pointer"}}>＋</button>
+          </div>
+          <ZoneHint g={senG?String(senG):""} confirmed={cyc.confirmed} denied={cyc.denied}/>
+        </Section>
+
+        {/* 追加済みリスト（各自折りたたみ） */}
+        {cyc.senList.map((s,si)=>{
+          const isOpen=openSenIdx===si;
+          const sc=SEN_COLORS.find(c=>c===s.color);
+          return (
+            <div key={s.id} style={{marginBottom:4}}>
+              <button onClick={()=>setOpenSenIdx(isOpen?null:si)} style={{
+                background:isOpen?"#00ff9911":"#0a0a18",
+                color:GRN,
+                border:`1px solid ${s.ok===true?"#00ff9944":s.ok===false?"#ff444433":"#1a2a1a"}`,
+                borderRadius:isOpen?"7px 7px 0 0":7,
+                padding:"7px 10px",fontSize:12,cursor:"pointer",
+                fontFamily:FONT,width:"100%",textAlign:"left",
+                display:"flex",alignItems:"center",gap:8,
+              }}>
+                <span style={{fontWeight:700,fontSize:14,color:GRN}}>{s.g}G</span>
+                <Tag color={s.trigger==="ポイント"?"#fd7e14":"#445"} sm>{s.trigger}</Tag>
+                {s.tableNum&&<Tag color="#557" sm>T{s.tableNum}</Tag>}
+                {s.color&&<span style={{fontSize:16}}>{s.color}</span>}
+                {s.ok===true&&<span style={{color:"#00ff99",fontWeight:700}}>〇</span>}
+                {s.ok===false&&<span style={{color:"#ff4444",fontWeight:700}}>×</span>}
+                <span style={{marginLeft:"auto",color:"#445",fontSize:11}}>{isOpen?"▼":"▶"}</span>
+              </button>
+              {isOpen&&(
+                <div style={{background:"#0a0a18",border:"1px solid #1a2a1a",borderTop:"none",borderRadius:"0 0 7px 7px",padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:MUT,marginBottom:2}}>テーブル</div>
+                  <div style={{...row,marginBottom:6}}>
+                    {TABLE_LABEL.map(t=>(
+                      <Btn key={t} active={s.tableNum===t} color="#667" sm
+                        onClick={()=>updSen(si,"tableNum",s.tableNum===t?null:t)}>{t}</Btn>
+                    ))}
+                  </div>
+                  <div style={{fontSize:10,color:MUT,marginBottom:2}}>発展色</div>
+                  <div style={{...row,marginBottom:6}}>
+                    {SEN_COLORS.map(c=>(
+                      <button key={c} onClick={()=>updSen(si,"color",s.color===c?null:c)}
+                        style={{background:s.color===c?"#ffffff22":"transparent",border:`1px solid ${s.color===c?"#888":"#333"}`,borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:16,lineHeight:1}}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{...row,marginBottom:6}}>
+                    <Btn active={s.ok===true}  color="#00ff99" sm onClick={()=>updSen(si,"ok",s.ok===true?null:true)}>〇 成功</Btn>
+                    <Btn active={s.ok===false} color="#ff4444" sm onClick={()=>updSen(si,"ok",s.ok===false?null:false)}>× 失敗</Btn>
+                  </div>
+                  {/* 前兆メモ: テキスト入力だがテンキーではなく自由入力 */}
+                  <div style={{fontSize:10,color:MUT,marginBottom:2}}>前兆メモ</div>
+                  <input
+                    style={{background:"#070710",border:"1px solid #333",borderRadius:6,color:"#bbb",padding:"5px 8px",fontSize:12,width:"100%",fontFamily:FONT,boxSizing:"border-box"}}
+                    value={s.memo}
+                    onChange={e=>updSen(si,"memo",e.target.value)}
+                    placeholder="前兆の演出メモ"/>
+                  <button onClick={()=>delSen(si)} style={{marginTop:6,background:"transparent",color:"#ff4444",border:"1px solid #ff444433",borderRadius:5,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:FONT}}>削除</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ★ CZ */}
+      <Section id="cz" label={`🔥 CZ${hasCZ?` [${cyc.cz.type} ${cyc.cz.g}G]`:""}`} color="#fbbf24" badge={hasCZ?(cyc.cz.ok===true?"✅成功":cyc.cz.ok===false?"❌失敗":"記録中"):""}>
+        {!hasCZ?(
+          <>
+            <div style={{fontSize:10,color:MUT,marginBottom:6}}>殲滅ゾーン成功後に記録</div>
+            <div style={{marginBottom:6}}>
+              <GInput value={czG} onChange={setCzG} placeholder="CZ突入G数" label="CZ突入 G数"/>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>addCZ("SAM")} style={{flex:1,background:"#fbbf2422",color:"#fbbf24",border:"1px solid #fbbf2444",borderRadius:7,padding:"10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:FONT}}>⚡ S.A.M.CZ</button>
+              <button onClick={()=>addCZ("タチコマ")} style={{flex:1,background:"#0dcaf022",color:"#0dcaf0",border:"1px solid #0dcaf044",borderRadius:7,padding:"10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:FONT}}>🤖 タチコマCZ</button>
+            </div>
+          </>
+        ):(
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+              <Tag color={cyc.cz.type==="タチコマ"?"#0dcaf0":"#fbbf24"}>{cyc.cz.type}</Tag>
+              <span style={{color:"#fbbf24",fontWeight:700}}>{cyc.cz.g}G</span>
+              <button onClick={()=>updCyc(c=>({...c,cz:null}))} style={{marginLeft:"auto",background:"none",border:"1px solid #333",color:"#556",cursor:"pointer",borderRadius:4,padding:"2px 8px",fontSize:11,fontFamily:FONT}}>削除</button>
+            </div>
+            <div style={{fontSize:10,color:MUT,marginBottom:2}}>最終レベル色</div>
+            <div style={{...row,marginBottom:6}}>
+              {CZ_LEVELS.map(c=>(
+                <button key={c} onClick={()=>updCZ("level",cyc.cz.level===c?null:c)}
+                  style={{background:cyc.cz.level===c?"#ffffff22":"transparent",border:`1px solid ${cyc.cz.level===c?"#888":"#333"}`,borderRadius:4,padding:"4px 10px",cursor:"pointer",fontSize:20,lineHeight:1}}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:10,color:MUT,marginBottom:2}}>レア役（自力突破確認用）</div>
+            <div style={{...row,marginBottom:6}}>
+              {RARE_ROLES.map(r=>(
+                <Btn key={r} active={cyc.cz.rare===r} color={r==="なし"?"#445":"#fd7e14"} sm
+                  onClick={()=>updCZ("rare",r)}>{r}</Btn>
+              ))}
+            </div>
+            <div style={{...row,marginBottom:6}}>
+              <Btn active={cyc.cz.ok===true}  color="#00ff99" onClick={()=>updCZ("ok",cyc.cz.ok===true?null:true)}>〇 成功→AT</Btn>
+              <Btn active={cyc.cz.ok===false} color="#ff4444" onClick={()=>updCZ("ok",cyc.cz.ok===false?null:false)}>× 失敗</Btn>
+            </div>
+            {cyc.cz.ok===false&&(
+              <>
+                <div style={{fontSize:10,color:MUT,marginBottom:2}}>復活ハック</div>
+                <div style={{...row,marginBottom:6}}>
+                  <Btn active={cyc.cz.fukkatsu===true}  color="#00ff99" sm onClick={()=>updCZ("fukkatsu",cyc.cz.fukkatsu===true?null:true)}>〇 復活→AT</Btn>
+                  <Btn active={cyc.cz.fukkatsu===false} color="#ff4444" sm onClick={()=>updCZ("fukkatsu",cyc.cz.fukkatsu===false?null:false)}>× なし</Btn>
+                </div>
+                <div style={{fontSize:10,color:MUT,marginBottom:2}}>S.A.M.終了画面</div>
+                <div style={row}>
+                  {SAM_SCREENS.map(s=>(
+                    <Btn key={s.key} active={cyc.cz.samScreen===s.key} color="#667" sm
+                      onClick={()=>updCZ("samScreen",cyc.cz.samScreen===s.key?null:s.key)}>{s.key}</Btn>
+                  ))}
+                </div>
+                {cyc.cz.samScreen&&<div style={{fontSize:10,color:"#aaa",marginTop:2}}>→ {SAM_SCREENS.find(s=>s.key===cyc.cz.samScreen)?.hint}</div>}
+              </>
+            )}
+          </div>
+        )}
+      </Section>
+
+      {/* ★ AT結果 */}
+      <Section id="atresult" label="🎰 AT結果" color="#a855f7">
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:MUT,marginBottom:2}}>獲得枚数</div>
+            <GInput value={at.atMai} onChange={v=>updAT(a=>({...a,atMai:v}))} placeholder="枚数" label="獲得枚数"/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:MUT,marginBottom:2}}>ボーナス(リブート等)</div>
+            <GInput value={at.bonusMai} onChange={v=>updAT(a=>({...a,bonusMai:v}))} placeholder="ボーナス" label="ボーナス枚数"/>
+          </div>
+        </div>
+
+        <div style={{fontSize:10,color:MUT,marginBottom:3}}>一枚絵（AT終了/CZ失敗PUSH/裏コマンド）</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
+          {ICHI_LIST.map(e=>(
+            <button key={e.key} onClick={()=>updAT(a=>({...a,ichiKey:a.ichiKey===e.key?null:e.key}))}
+              style={{background:at.ichiKey===e.key?e.color+"22":"transparent",border:`1px solid ${at.ichiKey===e.key?e.color:"#222"}`,borderRadius:6,padding:"5px 7px",cursor:"pointer",textAlign:"left"}}>
+              <div style={{color:at.ichiKey===e.key?e.color:"#778",fontWeight:700,fontSize:11,fontFamily:FONT}}>{e.key}</div>
+              <div style={{color:"#445",fontSize:9}}>{e.hint}</div>
+            </button>
+          ))}
+        </div>
+        {at.ichiKey&&(
+          <div style={{...row,marginBottom:6}}>
+            <span style={{fontSize:10,color:MUT,alignSelf:"center"}}>枠色:</span>
+            {FRAME_LIST.map(f=>(
+              <Btn key={f.key} active={at.frameKey===f.key} color={f.color} sm
+                onClick={()=>updAT(a=>({...a,frameKey:f.key}))}>{f.key}</Btn>
+            ))}
+          </div>
+        )}
+
+        <div style={{fontSize:10,color:MUT,marginBottom:2}}>S.A.M.終了画面（AT中）</div>
+        <div style={{...row,marginBottom:6}}>
+          {SAM_SCREENS.map(s=>(
+            <Btn key={s.key} active={at.samScreen===s.key} color="#667" sm
+              onClick={()=>updAT(a=>({...a,samScreen:a.samScreen===s.key?null:s.key}))}>{s.key}</Btn>
+          ))}
+        </div>
+
+        <div style={{fontSize:10,color:MUT,marginBottom:2}}>トロフィー</div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
+          {TROPHY_LIST.map(t=>(
+            <Btn key={t.key} active={at.trophyKey===t.key} color={t.color}
+              onClick={()=>updAT(a=>({...a,trophyKey:t.key}))}>{t.label}</Btn>
+          ))}
+        </div>
+
+        <div style={{fontSize:10,color:MUT,marginBottom:2}}>白の境界 Lv</div>
+        <div style={{...row,marginBottom:6}}>
+          {["1","2","3"].map(lv=>(
+            <Btn key={lv} active={at.hakkyoLevel===lv} color="#0dcaf0" sm
+              onClick={()=>updAT(a=>({...a,hakkyoLevel:a.hakkyoLevel===lv?null:lv}))}>Lv{lv}</Btn>
+          ))}
+        </div>
+
+        {/* AT終了後のタチコマ看板（次AT示唆） */}
+        <div style={{borderTop:`1px solid ${BDR}`,paddingTop:8,marginTop:4}}>
+          <div style={{fontSize:10,color:"#fbbf24",marginBottom:4}}>AT終了後 タチコマ看板色（→次ATへの示唆）</div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {TACHI_LIST.map(t=>(
+              <button key={t.key} onClick={()=>updAT(a=>({...a,tachikomaColor:a.tachikomaColor===t.key?null:t.key}))}
+                style={{background:at.tachikomaColor===t.key?"#ffffff22":"transparent",border:`1px solid ${at.tachikomaColor===t.key?"#fbbf24":"#333"}`,borderRadius:5,padding:"4px 12px",cursor:"pointer",fontSize:20}}>
+                {t.key}
+              </button>
+            ))}
+          </div>
+          {at.tachikomaColor&&<div style={{fontSize:10,color:"#fbbf24",marginTop:3}}>{TACHI_LIST.find(t=>t.key===at.tachikomaColor)?.hint}</div>}
+        </div>
+
+        <textarea
+          style={{background:"#070710",border:"1px solid #333",borderRadius:6,color:"#bbb",padding:"6px 8px",fontSize:12,width:"100%",fontFamily:FONT,boxSizing:"border-box",minHeight:50,resize:"vertical",marginTop:8}}
+          value={at.note} onChange={e=>updAT(a=>({...a,note:e.target.value}))}
+          placeholder="s9m / 白の境界詳細 / その他"/>
+      </Section>
+
+      <div style={{display:"flex",gap:6,marginTop:8}}>
+        <button style={{...outBtn("#ff6666","#dc354544"),flex:1}}
+          onClick={()=>{updCyc(c=>({...c,cz:c.cz?{...c.cz,ok:false}:c.cz}));addCycle();}}>
+          ❌ CZ失敗→次周期
+        </button>
+        <button style={{...outBtn("#aaa"),flex:1}}
+          onClick={()=>{setScreen("home");setTimeout(startNew,80);}}>
+          ＋ 次のAT
+        </button>
+      </div>
+      <button style={{...bigBtn(GRN),marginTop:6}} onClick={()=>setScreen("home")}>← ホームへ</button>
+    </div>
+  </div>
+);
+```
+
+}
+
+// ==================== サマリー ====================
+if (screen===“summary”) {
+const imeCount={}, trophyCount={};
+let czOk=0, czNg=0, fukOk=0, fukNg=0;
+ats.forEach(a=>{
+if (a.ichiKey) imeCount[a.ichiKey]=(imeCount[a.ichiKey]||0)+1;
+trophyCount[a.trophyKey]=(trophyCount[a.trophyKey]||0)+1;
+a.cycles.forEach(c=>{
+if (c.cz) {
+if (c.cz.ok===true) czOk++;
+if (c.cz.ok===false) { czNg++; if(c.cz.fukkatsu===true)fukOk++; if(c.cz.fukkatsu===false)fukNg++; }
+}
+});
+});
+return (
+<div style={{background:BG,minHeight:“100vh”,color:”#dde”,fontFamily:FONT,paddingBottom:80}}>
+<div style={{background:BG2,borderBottom:`1px solid ${GRN}22`,padding:“8px 12px”,display:“flex”,alignItems:“center”,justifyContent:“space-between”,position:“sticky”,top:0,zIndex:100}}>
+<button onClick={()=>setScreen(“home”)} style={{background:“none”,border:“none”,color:GRN,fontSize:18,cursor:“pointer”,padding:“0 4px”}}>←</button>
+<span style={{color:GRN,fontWeight:700,fontSize:12,letterSpacing:2}}>設定判別サマリー</span>
+<Tag sm>AT{ats.length}</Tag>
+</div>
+<div style={{padding:“10px 12px”}}>
+<div style={card}>
+<div style={sec}>CZ成績</div>
+<div style={{display:“flex”,gap:16,fontSize:18,fontWeight:700,marginBottom:4}}>
+<span style={{color:”#00ff99”}}>✅ {czOk}回</span>
+<span style={{color:”#ff4444”}}>❌ {czNg}回</span>
+{(czOk+czNg)>0&&<span style={{color:MUT,fontSize:13,fontWeight:400}}>成功率{Math.round(czOk/(czOk+czNg)*100)}%</span>}
+</div>
+{(fukOk+fukNg)>0&&<div style={{fontSize:12,color:”#aaa”}}>
+復活: <span style={{color:”#00ff99”}}>{fukOk}〇</span> / <span style={{color:”#ff4444”}}>{fukNg}×</span>
+<span style={{color:MUT}}> ({Math.round(fukOk/(fukOk+fukNg)*100)}%)</span>
+</div>}
+</div>
+<div style={card}>
+<div style={sec}>一枚絵分布</div>
+{Object.keys(imeCount).length===0
+? <div style={{color:MUT,fontSize:11}}>記録なし</div>
+: Object.entries(imeCount).map(([k,cnt])=>{
+const info=ICHI_LIST.find(e=>e.key===k)||{color:”#888”};
+return <div key={k} style={{display:“flex”,alignItems:“center”,gap:8,marginBottom:5}}>
+<span style={{minWidth:78,fontSize:11,color:info.color,fontWeight:700}}>{k}</span>
+<div style={{flex:1,background:”#1a1a2a”,borderRadius:3,height:6}}>
+<div style={{background:info.color,width:`${cnt/ats.length*100}%`,height:“100%”,borderRadius:3}}/>
+</div>
+<span style={{color:”#aaa”,fontSize:11,minWidth:36}}>{cnt}/{ats.length}</span>
+</div>;
+})}
+</div>
+<div style={card}>
+<div style={sec}>トロフィー</div>
+{Object.entries(trophyCount).filter(([k])=>k!==“なし”).length===0
+? <div style={{color:MUT,fontSize:11}}>なし</div>
+: Object.entries(trophyCount).filter(([k])=>k!==“なし”).map(([k,cnt])=>{
+const t=TROPHY_LIST.find(t=>t.key===k);
+return <div key={k} style={{marginBottom:4}}><Tag color={t?.color||”#888”}>{t?.label||k} ×{cnt}</Tag></div>;
+})}
+</div>
+<div style={card}>
+<div style={sec}>設定推測</div>
+{(()=>{
+const h=[];
+if((trophyCount[“虹”]||0)>0)    h.push({c:”#0dcaf0”,t:“🌈虹 → 設定6確定！”});
+if((trophyCount[“キリン”]||0)>0) h.push({c:”#fd7e14”,t:“🦒キリン → 設定5以上確定”});
+if((trophyCount[“金”]||0)>=2)    h.push({c:”#ffc107”,t:`🥇金×${trophyCount["金"]} → 設定4以上濃厚`});
+if((imeCount[“アオイ”]||0)>0)    h.push({c:”#fbbf24”,t:`アオイ${imeCount["アオイ"]}回 → モードD+設定4以上`});
+if(!h.length) h.push({c:”#334”,t:“サンプル不足。記録を続けましょう。”});
+return h.map((x,i)=><div key={i} style={{fontSize:12,color:x.c,marginBottom:5}}>• {x.t}</div>);
+})()}
+</div>
+<div style={card}>
+<div style={sec}>実戦レポート</div>
+<pre style={{background:”#050508”,border:`1px solid ${BDR}`,borderRadius:7,padding:10,fontSize:10,color:”#0f0”,whiteSpace:“pre-wrap”,lineHeight:1.8,maxHeight:320,overflow:“auto”,margin:0}}>
+{buildReport()}
+</pre>
+<div style={{fontSize:10,color:MUT,marginTop:4}}>↑ 長押しで全選択→コピー</div>
+</div>
+</div>
+</div>
+);
+}
+
+return null;
+}
