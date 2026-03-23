@@ -81,7 +81,18 @@ body{background:var(--bg);color:var(--t);font-family:'Hiragino Kaku Gothic ProN'
 .res-ok{background:rgba(0,255,157,.1);border-color:rgba(0,255,157,.5);color:#00ff9d;}
 .res-ng{background:rgba(255,59,92,.1);border-color:rgba(255,59,92,.5);color:#ff3b5c;}
 .res-btn:active{transform:scale(.95);}
+
+.slot-row{display:flex;gap:4px;align-items:center;}
+.slot-label{font-size:9px;color:var(–t2);white-space:nowrap;}
+.slot-name{flex:1;background:var(–bg3);border:1px solid var(–bdr);border-radius:5px;color:var(–t);font-size:11px;padding:4px 6px;height:30px;}
+.slot-save{padding:4px 8px;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.4);border-radius:5px;color:var(–c);font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;height:30px;}
+.slot-load{padding:4px 8px;background:rgba(0,255,157,.08);border:1px solid rgba(0,255,157,.35);border-radius:5px;color:var(–c2);font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;height:30px;}
+.slot-del{padding:4px 6px;background:rgba(255,59,92,.08);border:1px solid rgba(255,59,92,.3);border-radius:5px;color:var(–red);font-size:10px;font-weight:700;cursor:pointer;height:30px;}
+.slot-save:active,.slot-load:active,.slot-del:active{transform:scale(.94);}
+.slot-indicator{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.15);flex-shrink:0;}
+.slot-indicator.has{background:var(–c);}
 </style>
+
 </head>
 <body>
 <div class="hdr">
@@ -94,6 +105,7 @@ body{background:var(--bg);color:var(--t);font-family:'Hiragino Kaku Gothic ProN'
   <button class="tab" onclick="sw(2)">&#9876; 殲滅</button>
   <button class="tab" onclick="sw(3)">&#128161; 示唆</button>
   <button class="tab" onclick="sw(4)">&#128203; スペック</button>
+  <button class="tab" onclick="sw(5)">&#128190; 保存</button>
 </div>
 
 <div class="pane on" id="p0">
@@ -317,6 +329,58 @@ body{background:var(--bg);color:var(--t);font-family:'Hiragino Kaku Gothic ProN'
   </div>
 </div>
 
+<div class="pane" id="p5">
+  <div class="card">
+    <div class="card-title">&#128190; 手動スロット（5台分）</div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+
+```
+  <div style="display:flex;gap:5px;align-items:center;">
+    <div class="slot-indicator" id="si0"></div>
+    <span style="font-size:10px;color:var(--t2);width:20px;flex-shrink:0;">S1</span>
+    <input class="slot-name" id="sn0" type="text" placeholder="台名メモ" maxlength="12">
+    <button class="slot-save" onclick="slotSave(0)">保存</button>
+    <button class="slot-load" onclick="slotLoad(0)">読込</button>
+    <button class="slot-del" onclick="slotDel(0)">&#215;</button>
+  </div>
+  <div style="display:flex;gap:5px;align-items:center;">
+    <div class="slot-indicator" id="si1"></div>
+    <span style="font-size:10px;color:var(--t2);width:20px;flex-shrink:0;">S2</span>
+    <input class="slot-name" id="sn1" type="text" placeholder="台名メモ" maxlength="12">
+    <button class="slot-save" onclick="slotSave(1)">保存</button>
+    <button class="slot-load" onclick="slotLoad(1)">読込</button>
+    <button class="slot-del" onclick="slotDel(1)">&#215;</button>
+  </div>
+  <div style="display:flex;gap:5px;align-items:center;">
+    <div class="slot-indicator" id="si2"></div>
+    <span style="font-size:10px;color:var(--t2);width:20px;flex-shrink:0;">S3</span>
+    <input class="slot-name" id="sn2" type="text" placeholder="台名メモ" maxlength="12">
+    <button class="slot-save" onclick="slotSave(2)">保存</button>
+    <button class="slot-load" onclick="slotLoad(2)">読込</button>
+    <button class="slot-del" onclick="slotDel(2)">&#215;</button>
+  </div>
+  <div style="display:flex;gap:5px;align-items:center;">
+    <div class="slot-indicator" id="si3"></div>
+    <span style="font-size:10px;color:var(--t2);width:20px;flex-shrink:0;">S4</span>
+    <input class="slot-name" id="sn3" type="text" placeholder="台名メモ" maxlength="12">
+    <button class="slot-save" onclick="slotSave(3)">保存</button>
+    <button class="slot-load" onclick="slotLoad(3)">読込</button>
+    <button class="slot-del" onclick="slotDel(3)">&#215;</button>
+  </div>
+  <div style="display:flex;gap:5px;align-items:center;">
+    <div class="slot-indicator" id="si4"></div>
+    <span style="font-size:10px;color:var(--t2);width:20px;flex-shrink:0;">S5</span>
+    <input class="slot-name" id="sn4" type="text" placeholder="台名メモ" maxlength="12">
+    <button class="slot-save" onclick="slotSave(4)">保存</button>
+    <button class="slot-load" onclick="slotLoad(4)">読込</button>
+    <button class="slot-del" onclick="slotDel(4)">&#215;</button>
+  </div>
+</div>
+```
+
+  </div>
+  <button class="rst-all" style="margin:0 8px 8px;display:block;" onclick="resetAll()">&#9888; 全データリセット（新規）</button>
+</div>
 <script>
 function sw(i){
   document.querySelectorAll('.pane').forEach((p,j)=>p.classList.toggle('on',i===j));
@@ -357,9 +421,9 @@ function setupTapBtns(){
     btn.addEventListener('mouseleave',()=>{clearTimeout(holdTimers[id]);holdTimers[id]=null;});
   });
 }
-function incCV(id,btn,isStg){CV[id]=(CV[id]||0)+1;document.getElementById(id).textContent=CV[id];btn.classList.add('tapped');if(isStg)updateStgStats();}
-function decCV(id,btn,isStg){if((CV[id]||0)<=0)return;CV[id]--;document.getElementById(id).textContent=CV[id];if(CV[id]===0)btn.classList.remove('tapped');btn.classList.add('minus-flash');setTimeout(()=>btn.classList.remove('minus-flash'),300);if(isStg)updateStgStats();}
-function rstBtn(id,btn){CV[id]=0;document.getElementById(id).textContent=0;btn.classList.remove('tapped');}
+function incCV(id,btn,isStg){CV[id]=(CV[id]||0)+1;document.getElementById(id).textContent=CV[id];btn.classList.add('tapped');if(isStg)updateStgStats();saveAll();}
+function decCV(id,btn,isStg){if((CV[id]||0)<=0)return;CV[id]--;document.getElementById(id).textContent=CV[id];if(CV[id]===0)btn.classList.remove('tapped');btn.classList.add('minus-flash');setTimeout(()=>btn.classList.remove('minus-flash'),300);if(isStg)updateStgStats();saveAll();}
+function rstBtn(id,btn){CV[id]=0;document.getElementById(id).textContent=0;btn.classList.remove('tapped');saveAll();}
 function rstStg(id,btn){rstBtn(id,btn);updateStgStats();}
 function updateStgStats(){
   const n=CV['sn']||0,h=CV['sh']||0,s=CV['ss']||0,t=n+h+s;
@@ -388,7 +452,7 @@ function updateSelDisp(){
 function recResult(ok){
   if(!curColor)return;
   CB[curColor][curTbl][ok?'ok':'ng']++;
-  updateComboStats();
+  updateComboStats();saveAll();
   const el=document.getElementById('sel-disp');
   el.style.background=ok?'rgba(0,255,157,.2)':'rgba(255,59,92,.2)';
   setTimeout(()=>el.style.background='',400);
@@ -411,7 +475,7 @@ function updateComboStats(){
   }
   document.getElementById('cbTT').innerHTML=fmtCell(gtok,gtng);
 }
-function resetSenmetsu(){COLORS.forEach(c=>{for(let t=1;t<=7;t++)CB[c][t]={ok:0,ng:0};});updateComboStats();curColor=null;document.querySelectorAll('.col-sel-btn').forEach(b=>b.classList.remove('on'));updateSelDisp();}
+function resetSenmetsu(){COLORS.forEach(c=>{for(let t=1;t<=7;t++)CB[c][t]={ok:0,ng:0};});updateComboStats();saveAll();curColor=null;document.querySelectorAll('.col-sel-btn').forEach(b=>b.classList.remove('on'));updateSelDisp();}
 function loadImg(input,zoneId){
   const f=input.files[0];if(!f)return;
   const r=new FileReader();
@@ -434,8 +498,127 @@ function clearImg(zoneId){
   z.classList.remove('has-img');
   z.querySelector('input[type=file]').value='';
 }
+
+// ===== localStorage 自動保存 =====
+function saveAll(){
+try{
+localStorage.setItem(‘kokaku_cv’, JSON.stringify(CV));
+localStorage.setItem(‘kokaku_cb’, JSON.stringify(CB));
+}catch(e){}
+}
+function loadAll(){
+try{
+const cv=localStorage.getItem(‘kokaku_cv’);
+const cb=localStorage.getItem(‘kokaku_cb’);
+if(cv){
+const d=JSON.parse(cv);
+Object.keys(d).forEach(id=>{
+CV[id]=d[id];
+const el=document.getElementById(id);
+if(el)el.textContent=d[id];
+const btn=document.querySelector(’[data-id=”’+id+’”]’);
+if(btn&&d[id]>0)btn.classList.add(‘tapped’);
+});
+updateStgStats();
+}
+if(cb){
+const d=JSON.parse(cb);
+COLORS.forEach(c=>{
+if(d[c])for(let t=1;t<=7;t++){
+if(d[c][t])CB[c][t]=d[c][t];
+}
+});
+updateComboStats();
+}
+}catch(e){}
+}
+
+// ===== 全データリセット =====
+function resetAll(){
+// カウンター全クリア
+document.querySelectorAll(’.tap-btn[data-id]’).forEach(btn=>{
+const id=btn.dataset.id;
+CV[id]=0;
+const el=document.getElementById(id);
+if(el)el.textContent=0;
+btn.classList.remove(‘tapped’);
+});
+updateStgStats();
+// 殲滅データクリア
+COLORS.forEach(c=>{for(let t=1;t<=7;t++)CB[c][t]={ok:0,ng:0};});
+updateComboStats();
+curColor=null;
+document.querySelectorAll(’.col-sel-btn’).forEach(b=>b.classList.remove(‘on’));
+updateSelDisp();
+// localStorage クリア
+try{
+localStorage.removeItem(‘kokaku_cv’);
+localStorage.removeItem(‘kokaku_cb’);
+}catch(e){}
+}
 setupTapBtns();
 updateComboStats();
+loadAll();
+
+// ===== 手動スロット =====
+const SLOT_COUNT = 5;
+function getSlotKey(i){ return ‘kokaku_slot_’ + i; }
+function slotSave(i){
+const name = document.getElementById(‘sn’+i).value || (‘スロット’+(i+1));
+const data = { name, cv: JSON.parse(JSON.stringify(CV)), cb: JSON.parse(JSON.stringify(CB)) };
+try{
+localStorage.setItem(getSlotKey(i), JSON.stringify(data));
+updateSlotIndicators();
+const btn = document.querySelectorAll(’.slot-save’)[i];
+btn.textContent=‘✓’; setTimeout(()=>btn.textContent=‘保存’, 800);
+}catch(e){ alert(‘保存失敗’); }
+}
+function slotLoad(i){
+try{
+const raw = localStorage.getItem(getSlotKey(i));
+if(!raw){ alert(‘データなし’); return; }
+const data = JSON.parse(raw);
+
+```
+// CV復元
+Object.keys(CV).forEach(k=>{CV[k]=0;const el=document.getElementById(k);if(el)el.textContent=0;const b=document.querySelector('[data-id="'+k+'"]');if(b)b.classList.remove('tapped');});
+Object.keys(data.cv).forEach(id=>{
+  CV[id]=data.cv[id];
+  const el=document.getElementById(id);if(el)el.textContent=data.cv[id];
+  const btn=document.querySelector('[data-id="'+id+'"]');
+  if(btn&&data.cv[id]>0)btn.classList.add('tapped');
+});
+// CB復元
+COLORS.forEach(c=>{for(let t=1;t<=7;t++)CB[c][t]={ok:0,ng:0};});
+COLORS.forEach(c=>{if(data.cb&&data.cb[c])for(let t=1;t<=7;t++){if(data.cb[c][t])CB[c][t]=data.cb[c][t];}});
+document.getElementById('sn'+i).value = data.name||'';
+updateStgStats(); updateComboStats(); saveAll();
+```
+
+}catch(e){ alert(‘読込失敗’); }
+}
+function slotDel(i){
+localStorage.removeItem(getSlotKey(i));
+document.getElementById(‘sn’+i).value=’’;
+updateSlotIndicators();
+}
+function updateSlotIndicators(){
+for(let i=0;i<SLOT_COUNT;i++){
+const has = !!localStorage.getItem(getSlotKey(i));
+const el = document.getElementById(‘si’+i);
+if(el) el.classList.toggle(‘has’, has);
+// 保存済み名前を表示
+if(has){
+try{
+const d=JSON.parse(localStorage.getItem(getSlotKey(i)));
+const inp=document.getElementById(‘sn’+i);
+if(inp&&!inp.value&&d.name)inp.value=d.name;
+}catch(e){}
+}
+}
+}
+
+updateSlotIndicators();
 </script>
 
 </body>
